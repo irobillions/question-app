@@ -1,20 +1,20 @@
-{% macro shows_links(user) %}
+{% macro shows_links(user,classActive) %}
 <ul class="nav navbar-nav">
-    <li class="{{ classActivehome }}"><a href="{{ url_for('index') }}">Home</a></li>
-    {% if user and user.admin == 0 and user.expert == 0 %}
-    <li class="{{ classActiveask }}"><a href="{{ url_for('ask') }}">Ask Question</a></li>
+    <li class="{{ classActive.classActivehome }}"><a href="{{ url_for('index') }}">Home</a></li>
+    {% if user and not user.admin and not user.expert %}
+    <li class="{{ classActive.classActiveask }}"><a href="{{ url_for('ask') }}">Ask Question</a></li>
     {% endif %}
-    {% if user and user.expert == 1 %}
-    <li class="{{ classActiveunan or classActiveanswer }}"><a href="{{ url_for('unanswered') }}">Answer Questions</a></li>
+    {% if user and user.expert%}
+    <li class="{{ classActive.classActiveunan or classActive.classActiveanswer }}"><a href="{{ url_for('unanswered') }}">Answer Questions</a></li>
     {% endif %}
-    {% if user and user.admin == 1 %}
-    <li class="{{ classActiveuser }}"><a href="{{ url_for('users_control') }}">User Setup</a></li>
+    {% if user and user.admin %}
+    <li class="{{ classActive.classActiveuser }}"><a href="{{ url_for('users_control') }}">User Setup</a></li>
     {% endif %}
 </ul>
 <ul class="nav navbar-nav navbar-right">
     {% if not user %}
-    <li class="{{ classActivelogin }}"><a href="{{ url_for('login') }}">Login</a></li>
-    <li class="{{ classActiveregister }}"><a href="{{ url_for('register') }}">Register</a></li>
+    <li class="{{ classActive.classActivelogin }}"><a href="{{ url_for('login') }}">Login</a></li>
+    <li class="{{ classActive.classActiveregister }}"><a href="{{ url_for('register') }}">Register</a></li>
     {% endif %}
     {% if user %}
     <li style="background-color: crimson"><a href="{{ url_for('logout') }}">Logout</a></li>

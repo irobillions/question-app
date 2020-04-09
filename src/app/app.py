@@ -1,12 +1,16 @@
 from flask import Flask, render_template, g, request, redirect, url_for, session
 from werkzeug.security import generate_password_hash, check_password_hash
-from .database import get_db
+from .database import get_db, connect_db
 import os
 
 app = Flask(__name__)
 
 app.config['SECRET_KEY'] = os.urandom(24)
 classActive = 'active'
+classActives = {'classActivehome': classActive, 'classActivelogin': classActive,
+               'classActiveregister': classActive, 'classActiveask': classActive,
+               'classActiveanswer': classActive, 'classActiveunan': classActive,
+               'classActiveuser': classActive}
 
 
 def get_current_user():
@@ -15,16 +19,18 @@ def get_current_user():
     if 'user' in session:
         db = get_db()
         user = session['user']
-        user_cursor = db.execute('select * from users where name=?', [user])
-        user_result = user_cursor.fetchone()
+        db.execute('select * from users where name= %s', (user, ))
+        user_result = db.fetchone()
 
     return user_result
 
 
 @app.teardown_appcontext
 def close_db(error):
-    if hasattr(g, 'sqlite3'):
-        g.sqlite_db.close()
+    if hasattr(g, 'postgres_db_cur'):
+        g.postgres_db_cur.close()
+    if hasattr(g, 'postgres_db_conn'):
+        g.postgres_db_conn.close()
 
 
 @app.route('/')
@@ -32,14 +38,14 @@ def close_db(error):
 def index():
     user = get_current_user()
     db = get_db()
-    questions_cursor = db.execute(
+    db.execute(
         'select questions.id, questions.question_text, askers.name as asker, experts.name as expert '
         'from questions join users as askers on questions.asked_by_id=askers.id '
         'join users as experts on questions.expert_id = experts.id '
         'where questions.answer_text is not null')
-    questions = questions_cursor.fetchall()
+    questions = db.fetchall()
 
-    return render_template('home.html', classActivehome=classActive, user=user, questions=questions)
+    return render_template('home.html', classActive=classActives, user=user, questions=questions)
 
 
 @app.route('/login', methods=['POST', 'GET'])
@@ -50,10 +56,10 @@ def login():
         email = request.form['useremail']
         password = request.form['userpassword']
         db = get_db()
-        user_cursor = db.execute('select * , count(*) as user from users where email = ?', [email])
-        user = user_cursor.fetchone()
+        db.execute('select * from users where email = %s', (email, ))
+        user = db.fetchone()
 
-        if user['user'] > 0:
+        if user:
             if check_password_hash(user['password'], password):
                 session['user'] = user['name']
                 return redirect(url_for('index'))
@@ -62,7 +68,7 @@ def login():
         else:
             errors['error_email'] = 'Email dont exist'
 
-    return render_template('login.html', errors=errors, classActivelogin=classActive, user=current_user)
+    return render_template('login.html', errors=errors, classActive=classActives, user=current_user)
 
 
 @app.route('/register', methods=['POST', 'GET'])
@@ -72,11 +78,10 @@ def register():
     error = {'name': 'None', 'email': 'None'}
     if request.method == 'POST':
         db = get_db()
-        user_cursor = db.execute('select name, email, count(*) as user from users where name=? or email=?',
-                                 [request.form['username'], request.form['useremail']])
-        user = user_cursor.fetchone()
+        db.execute('select name, email from users where name = %s or email= %s group by name,email', (request.form['username'], request.form['useremail'], ))
+        user = db.fetchone()
 
-        if user['user'] > 0:
+        if user:
             if user['name'] == request.form['username']:
                 error['name'] = 'this name already exist'
                 user_created = False
@@ -85,16 +90,14 @@ def register():
                 user_created = False
         else:
             hashed_password = generate_password_hash(request.form['userpassword'], method='sha256')
-            db.execute('insert into users (name,email,password,expert,admin) values (?,?,?,?,?)',
-                       [request.form['username'], request.form['useremail'], hashed_password, 0, 0])
-            db.commit()
-
+            db.execute('insert into users (name,email,password,expert,admin) values (%s,%s,%s,%s,%s)',
+                       (request.form['username'], request.form['useremail'], hashed_password, False, False, ))
             user_created = True
             session['user'] = request.form['username']
             return redirect(url_for('index'))
 
     return render_template('register.html', error=error, user_created=user_created,
-                           classActiveregister=classActive, user=current_user)
+                           classActive=classActives, user=current_user)
 
 
 @app.route('/askquestion', methods=['POST', 'GET'])
@@ -104,18 +107,17 @@ def ask():
 
     if not current_user:
         return redirect(url_for('login'))
-    if current_user['expert'] == 1 or current_user['admin'] == 1:
+    if current_user['expert'] or current_user['admin']:
         return redirect(url_for('index'))
     if request.method == 'POST':
-        db.execute('insert into questions (question_text, asked_by_id,expert_id) values (?,?,?)',
-                   [request.form['question'], current_user['id'], request.form['expert']])
-        db.commit()
+        db.execute('insert into questions (question_text, asked_by_id,expert_id) values (%s,%s,%s)',
+                   (request.form['question'], current_user['id'], request.form['expert'], ))
         return redirect(url_for('index'))
 
-    expert_cursor = db.execute('select * from users where expert = 1')
-    expert_result = expert_cursor.fetchall()
+    db.execute('select * from users where expert = True')
+    expert_result = db.fetchall()
 
-    return render_template('ask.html', classActiveask=classActive, user=current_user, experts=expert_result)
+    return render_template('ask.html', classActive=classActives, user=current_user, experts=expert_result)
 
 
 @app.route('/answers/<question_id>', methods=['POST', 'GET'])
@@ -126,17 +128,16 @@ def answers(question_id):
     if not current_user:
         return redirect(url_for('login'))
 
-    if current_user['expert'] != 1:
+    if not current_user['expert']:
         return redirect(url_for('index'))
 
-    question_cursor = db.execute('select * from questions where id = ?', [question_id])
-    questions_results = question_cursor.fetchone()
+    db.execute('select * from questions where id = %s', (question_id, ))
+    questions_results = db.fetchone()
     if request.method == 'POST':
-        db.execute('UPDATE questions set answer_text=? where id=?', [request.form['answer'], question_id])
-        db.commit()
+        db.execute('UPDATE questions set answer_text= %s where id= %s', (request.form['answer'], question_id, ))
         return redirect(url_for('unanswered'))
 
-    return render_template('answer.html', classActiveanswer=classActive, user=current_user, question=questions_results)
+    return render_template('answer.html', classActive=classActives, user=current_user, question=questions_results)
 
 
 @app.route('/unanswered')
@@ -147,15 +148,16 @@ def unanswered():
     if not current_user:
         return redirect(url_for('login'))
 
-    if current_user['expert'] != 1:
+    if not current_user['expert']:
         return redirect(url_for('index'))
 
-    question_cur = db.execute('select questions.id, questions.question_text, users.name '
+    db.execute('select questions.id, questions.question_text, users.name '
                               'from questions join users on questions.asked_by_id = users.id '
-                              'where questions.expert_id = ? and questions.answer_text is null', [current_user['id']])
-    questions = question_cur.fetchall()
+                              'where questions.expert_id = %s and questions.answer_text is null',
+               (current_user['id'], ))
+    questions = db.fetchall()
 
-    return render_template('unanswered.html', questions=questions, user=current_user, classActiveunan=classActive)
+    return render_template('unanswered.html', questions=questions, user=current_user, classActive=classActives)
 
 
 @app.route('/questions/<question_id>')
@@ -166,13 +168,13 @@ def questions(question_id):
     if not current_user:
         return redirect(url_for('login'))
 
-    question_cursor = db.execute(
+    db.execute(
         'select questions.id, questions.question_text, questions.answer_text, '
         'askers.name as asker, experts.name as expert '
         'from questions join users as askers on questions.asked_by_id=askers.id '
         'join users as experts on questions.expert_id = experts.id '
-        'where questions.id =? ', [question_id])
-    question = question_cursor.fetchone()
+        'where questions.id = %s', (question_id, ))
+    question = db.fetchone()
     return render_template('question.html', question=question, user=current_user)
 
 
@@ -183,14 +185,14 @@ def users_control():
     if not current_user:
         return redirect(url_for('login'))
 
-    if current_user['admin'] !=1:
+    if not current_user['admin']:
         return redirect(url_for('index'))
 
     db = get_db()
-    user_cursor = db.execute('select * from users')
-    users_list = user_cursor.fetchall()
+    db.execute('select * from users')
+    users_list = db.fetchall()
 
-    return render_template('users.html', classActiveuser=classActive, user=current_user, users=users_list)
+    return render_template('users.html', classActive=classActives, user=current_user, users=users_list)
 
 
 @app.route('/promote/<user_id>')
@@ -200,11 +202,10 @@ def promote(user_id):
 
     if not current_user:
         return redirect(url_for('login'))
-    if current_user['admin'] !=1:
+    if not current_user['admin']:
         redirect(url_for('index'))
 
-    db.execute('update users set expert = 1 where id = ?', [user_id])
-    db.commit()
+    db.execute('update users set expert = True where id = %s', (user_id, ))
 
     return redirect(url_for('users_control'))
 
