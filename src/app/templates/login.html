@@ -1,0 +1,42 @@
+{% extends 'layouts/index.html' %}
+
+{% block title %} {{ super() }} Login {% endblock %}
+
+{% block content %}
+     <div class="page-header">
+        <h1>Login</h1>
+     </div>
+    <div class="row">
+        <div class="col-lg-12">
+            <div class="well bs-component">
+              <form class="form-horizontal" method="POST" action="{{ url_for('login') }}">
+                <fieldset>
+                  <div class="form-group">
+                    <label for="inputEmail" class="col-lg-2 control-label">Email</label>
+                    <div class="col-lg-10">
+                      <input type="email" class="form-control" id="inputEmail" placeholder="email"  name="useremail" required>
+                        {% if errors.error_email !='None' %}
+                        <p id="errorEmail" class="has-error text-danger text-uppercase"> {{ errors.error_email }}</p>
+                        {% endif %}
+                    </div>
+                  </div>
+                  <div class="form-group">
+                    <label for="inputPassword" class="col-lg-2 control-label">Password</label>
+                    <div class="col-lg-10">
+                      <input type="password" class="form-control" id="inputPassword" placeholder="Password" name="userpassword" required>
+                        {% if errors.error_password !='None' %}
+                        <p id="errorEmail" class="has-error text-danger text-uppercase"> {{ errors.error_password }}</p>
+                        {% endif %}
+                    </div>
+                  </div>
+                  <div class="form-group">
+                    <div class="col-lg-10 col-lg-offset-2">
+                      <button type="submit" class="btn btn-primary">Login</button>
+                    </div>
+                  </div>
+                </fieldset>
+              </form>
+            </div>
+        </div>
+    </div>
+{% endblock %}

@@ -1,0 +1,12 @@
+{% extends 'layouts/index.html' %}
+
+{% block title %} {{ super() }} Question {% endblock %}
+
+{% block content %}
+     <div class="jumbotron">
+        <h1>{{ question.question_text }}</h1>
+         <p><strong>{{ question.answer_text }}</strong></p>
+        <p><a class="btn btn-primary btn-lg">Asked By: {{ question.asker }}</a></p>
+        <p><a class="btn btn-primary btn-lg">Answered By: {{ question.expert }}</a></p>
+      </div>
+{% endblock %}
